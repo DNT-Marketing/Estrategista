@@ -1,0 +1,12 @@
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#4ADE80;--green-d:#22c55e;--green-dim:rgba(74,222,128,.12);--green-border:rgba(74,222,128,.25);
+  --navy:#1E2332;--navy2:#252B3B;--navy3:#2D3447;--navy4:#363D52;
+  --bg:#151923;--bg2:#1A1F2E;
+  --text:#F1F5F9;--text2:#94A3B8;--text3:#4B5563;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
+  --r:12px;--rs:8px;
+}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
