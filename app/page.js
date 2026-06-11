@@ -1,5 +1,7 @@
 'use client';
 import { useState, useRef } from 'react';
+import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
 
 const SECS = [
   { key: 'diagnostico',        ico: '🔍', title: 'Diagnóstico atual' },
@@ -18,7 +20,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export default function Home() {
   const [step, setStep]         = useState(0);
-  const [loading, setLoading]   = useState(false);
   const [strategy, setStrategy] = useState(null);
   const [error, setError]       = useState('');
   const [loadStep, setLoadStep] = useState(0);
@@ -34,19 +35,16 @@ export default function Home() {
 
   const go = (n) => { setStep(n); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  // Screenshots
   const handleScreenshots = (e) => {
     const files = Array.from(e.target.files).slice(0, 6);
     setScreenshots(files);
     setScreenshotPreviews(files.map(f => URL.createObjectURL(f)));
   };
   const removeScreenshot = (i) => {
-    const s = screenshots.filter((_, idx) => idx !== i);
-    const p = screenshotPreviews.filter((_, idx) => idx !== i);
-    setScreenshots(s); setScreenshotPreviews(p);
+    setScreenshots(s => s.filter((_, idx) => idx !== i));
+    setScreenshotPreviews(p => p.filter((_, idx) => idx !== i));
   };
 
-  // Validation
   const validate1 = () => {
     const name = document.getElementById('brand-name')?.value?.trim();
     const product = document.getElementById('brand-product')?.value?.trim();
@@ -57,6 +55,7 @@ export default function Home() {
     setFormErrors({});
     return true;
   };
+
   const validate2 = () => {
     const handle = document.getElementById('ig-handle')?.value?.trim();
     if (!handle || !igMode) {
@@ -71,11 +70,8 @@ export default function Home() {
     return true;
   };
 
-  // GENERATE
   const generate = async () => {
-    setLoading(true); setLoadStep(0); go('load');
-
-    // Animate loading steps
+    setLoadStep(0); go('load');
     const animSteps = async () => {
       for (let i = 1; i <= 4; i++) { await sleep(1400); setLoadStep(i); }
     };
@@ -85,7 +81,7 @@ export default function Home() {
       const fd = new FormData();
       fd.append('brandName',    document.getElementById('brand-name')?.value || '');
       fd.append('brandProduct', document.getElementById('brand-product')?.value || '');
-      fd.append('niche',  niche); fd.append('goal', goal);
+      fd.append('niche', niche); fd.append('goal', goal);
       fd.append('client', document.getElementById('brand-client')?.value || '');
       fd.append('story',  document.getElementById('brand-story')?.value || '');
       fd.append('igHandle', document.getElementById('ig-handle')?.value || '');
@@ -99,7 +95,6 @@ export default function Home() {
       fd.append('extra', document.getElementById('extra')?.value || '');
       screenshots.forEach(f => fd.append('screenshots', f));
 
-      // Store for PDF/Excel
       formData.current = {
         name: document.getElementById('brand-name')?.value || '',
         ig:   document.getElementById('ig-handle')?.value || '',
@@ -109,154 +104,106 @@ export default function Home() {
       const res = await fetch('/api/generate', { method: 'POST', body: fd });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-
       await sleep(600);
       setStrategy(data.strategy);
       go('res');
     } catch (err) {
       setError(err.message);
       go('res');
-    } finally {
-      setLoading(false);
     }
   };
 
-  // PDF
-  const downloadPDF = async () => {
-    const jsPDF = (await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')).jspdf?.jsPDF;
-    if (!jsPDF) { alert('Erro ao carregar biblioteca de PDF. Tente novamente.'); return; }
+  const downloadPDF = () => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const W = 210, H = 297, ml = 18, mr = 18, tw = W - ml - mr;
     let y = 0;
-
-    const GREEN = [74, 222, 128], DARK = [21, 25, 35], NAVY2 = [37, 43, 59],
-          TEXTL = [241, 245, 249], TEXTM = [148, 163, 184], TEXTD = [75, 85, 99];
-
-    const bgPage = () => { doc.setFillColor(...DARK); doc.rect(0, 0, W, H, 'F'); };
-    const sideBar = () => { doc.setFillColor(...GREEN); doc.rect(0, 0, 3, H, 'F'); };
+    const GREEN = [74,222,128], DARK = [21,25,35], NAVY2 = [37,43,59],
+          TEXTL = [241,245,249], TEXTM = [148,163,184], TEXTD = [75,85,99];
+    const bgPage = () => { doc.setFillColor(...DARK); doc.rect(0,0,W,H,'F'); };
+    const sideBar = () => { doc.setFillColor(...GREEN); doc.rect(0,0,3,H,'F'); };
     const newPage = () => { doc.addPage(); bgPage(); sideBar(); y = 16; };
-    const checkY = (n) => { if (y + n > H - 18) newPage(); };
 
-    // COVER
     bgPage();
-    doc.setFillColor(...GREEN); doc.rect(0, 0, W, 3, 'F');
-    doc.setFillColor(...GREEN); doc.rect(0, 0, 5, H, 'F');
-    doc.setFillColor(...NAVY2); doc.roundedRect(14, 12, 40, 13, 3, 3, 'F');
-    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GREEN);
+    doc.setFillColor(...GREEN); doc.rect(0,0,W,3,'F');
+    doc.setFillColor(...GREEN); doc.rect(0,0,5,H,'F');
+    doc.setFillColor(...NAVY2); doc.roundedRect(14,12,40,13,3,3,'F');
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...GREEN);
     doc.text('ESTRATEGISTA IA', 34, 20, { align: 'center' });
-
     y = 85;
-    doc.setFontSize(36); doc.setFont('helvetica', 'bold'); doc.setTextColor(...TEXTL);
+    doc.setFontSize(36); doc.setFont('helvetica','bold'); doc.setTextColor(...TEXTL);
     doc.text('MAPA', ml, y); y += 16;
     doc.setTextColor(...GREEN); doc.text('ESTRATÉGICO', ml, y); y += 16;
     doc.setTextColor(...TEXTL); doc.text('INSTAGRAM', ml, y);
-
     y += 22;
-    doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(...TEXTM);
-    doc.text(formData.current.name || '', ml, y);
-    y += 8;
-    const h = (formData.current.ig || '').startsWith('@') ? formData.current.ig : '@' + (formData.current.ig || '');
-    doc.setFontSize(11); doc.setFont('helvetica', 'normal'); doc.setTextColor(...TEXTD);
-    doc.text(h, ml, y);
-    y += 14;
-    doc.setDrawColor(...GREEN); doc.setLineWidth(0.4); doc.line(ml, y, ml + 55, y);
-    y += 10;
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(...TEXTM);
+    doc.text(formData.current.name || '', ml, y); y += 8;
+    const h = (formData.current.ig||'').startsWith('@') ? formData.current.ig : '@'+(formData.current.ig||'');
+    doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.setTextColor(...TEXTD);
+    doc.text(h, ml, y); y += 14;
+    doc.setDrawColor(...GREEN); doc.setLineWidth(0.4); doc.line(ml,y,ml+55,y); y += 10;
     doc.setFontSize(9.5); doc.setTextColor(...TEXTD);
-    doc.text('Gerado em ' + new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }), ml, y);
-    doc.setFontSize(8.5); doc.setTextColor(50, 60, 80);
-    doc.text('Criado com Estrategista IA', ml, H - 12);
+    doc.text('Gerado em '+new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}), ml, y);
+    doc.setFontSize(8.5); doc.setTextColor(50,60,80);
+    doc.text('Criado com Estrategista IA', ml, H-12);
 
     const labels = {
-      diagnostico: 'DIAGNÓSTICO ATUAL', posicionamento: 'POSICIONAMENTO',
-      persona: 'PERSONA IDEAL', concorrencia: 'CONCORRÊNCIA',
-      linhasEditoriais: 'LINHAS EDITORIAIS & FUNIL', calendarioSugerido: 'CALENDÁRIO SUGERIDO',
-      ideiasDeConteudo: 'IDEIAS DE CONTEÚDO', planoDeAcao: 'PLANO DE AÇÃO — 30 DIAS'
+      diagnostico:'DIAGNÓSTICO ATUAL', posicionamento:'POSICIONAMENTO',
+      persona:'PERSONA IDEAL', concorrencia:'CONCORRÊNCIA',
+      linhasEditoriais:'LINHAS EDITORIAIS & FUNIL', calendarioSugerido:'CALENDÁRIO SUGERIDO',
+      ideiasDeConteudo:'IDEIAS DE CONTEÚDO', planoDeAcao:'PLANO DE AÇÃO — 30 DIAS'
     };
-    const nums = { diagnostico:'01', posicionamento:'02', persona:'03', concorrencia:'04', linhasEditoriais:'05', calendarioSugerido:'06', ideiasDeConteudo:'07', planoDeAcao:'08' };
+    const nums = {diagnostico:'01',posicionamento:'02',persona:'03',concorrencia:'04',linhasEditoriais:'05',calendarioSugerido:'06',ideiasDeConteudo:'07',planoDeAcao:'08'};
 
     SECS.forEach(sec => {
       if (!strategy?.[sec.key]) return;
       doc.addPage(); bgPage(); sideBar(); y = 16;
-      doc.setFontSize(9); doc.setTextColor(...TEXTD); doc.setFont('helvetica', 'normal');
-      doc.text(nums[sec.key] || '', W - mr, y, { align: 'right' });
-      doc.setFillColor(...NAVY2); doc.roundedRect(ml, y - 4, tw, 20, 3, 3, 'F');
-      doc.setFillColor(...GREEN); doc.roundedRect(ml, y - 4, 4, 20, 2, 2, 'F');
-      doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(...TEXTL);
-      doc.text(labels[sec.key] || '', ml + 10, y + 7.5);
+      doc.setFontSize(9); doc.setTextColor(...TEXTD); doc.setFont('helvetica','normal');
+      doc.text(nums[sec.key]||'', W-mr, y, {align:'right'});
+      doc.setFillColor(...NAVY2); doc.roundedRect(ml,y-4,tw,20,3,3,'F');
+      doc.setFillColor(...GREEN); doc.roundedRect(ml,y-4,4,20,2,2,'F');
+      doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(...TEXTL);
+      doc.text(labels[sec.key]||'', ml+10, y+7.5);
       y += 26;
       const plain = strip(strategy[sec.key]);
-      doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(...TEXTM);
+      doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(...TEXTM);
       const lines = doc.splitTextToSize(plain, tw);
       lines.forEach(line => {
-        if (y > H - 20) { newPage(); doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(...TEXTM); }
-        const isBold = /^(\d+\.|[-•★])/.test(line.trim()) || /^[A-ZÁÉÍÓÚ]{4,}/.test(line.trim());
-        if (isBold) { doc.setFont('helvetica', 'bold'); doc.setTextColor(...TEXTL); }
-        else { doc.setFont('helvetica', 'normal'); doc.setTextColor(...TEXTM); }
+        if (y > H-20) { newPage(); doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(...TEXTM); }
+        const isBold = /^(\d+\.|[-•★])/.test(line.trim())||/^[A-ZÁÉÍÓÚ]{4,}/.test(line.trim());
+        if (isBold) { doc.setFont('helvetica','bold'); doc.setTextColor(...TEXTL); }
+        else { doc.setFont('helvetica','normal'); doc.setTextColor(...TEXTM); }
         doc.text(line, ml, y); y += 5.2;
       });
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...TEXTD);
-      doc.text((formData.current.name || '') + ' · ' + h, ml, H - 8);
-      doc.text(new Date().toLocaleDateString('pt-BR'), W - mr, H - 8, { align: 'right' });
+      doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...TEXTD);
+      doc.text((formData.current.name||'')+' · '+h, ml, H-8);
+      doc.text(new Date().toLocaleDateString('pt-BR'), W-mr, H-8, {align:'right'});
     });
-
-    doc.save('mapa-estrategico-' + (formData.current.name || 'marca').toLowerCase().replace(/\s+/g, '-') + '.pdf');
+    doc.save('mapa-estrategico-'+(formData.current.name||'marca').toLowerCase().replace(/\s+/g,'-')+'.pdf');
   };
 
-  // EXCEL
-  const downloadExcel = async () => {
-    const XLSX = await import('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
     const d = formData.current;
-    const h = (d.ig || '').startsWith('@') ? d.ig : '@' + (d.ig || '');
-
+    const h = (d.ig||'').startsWith('@') ? d.ig : '@'+(d.ig||'');
     const addSheet = (name, rows) => {
       const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = [{ wch: 30 }, { wch: 100 }];
+      ws['!cols'] = [{wch:30},{wch:100}];
       XLSX.utils.book_append_sheet(wb, ws, name);
     };
-
-    addSheet('Capa', [
-      ['MAPA ESTRATÉGICO INSTAGRAM'], [''],
-      ['Marca', d.name], ['Instagram', h], ['Nicho', d.niche],
-      ['Objetivo', d.goal], ['Gerado em', new Date().toLocaleDateString('pt-BR')],
-    ]);
-
-    const sheetMap = [
-      ['01 Diagnóstico', 'diagnostico'],
-      ['02 Posicionamento', 'posicionamento'],
-      ['03 Persona', 'persona'],
-      ['04 Concorrência', 'concorrencia'],
-      ['05 Linhas Editoriais', 'linhasEditoriais'],
-      ['06 Calendário', 'calendarioSugerido'],
-      ['07 Ideias', 'ideiasDeConteudo'],
-      ['08 Plano de Ação', 'planoDeAcao'],
-    ];
-
-    sheetMap.forEach(([sheetName, key]) => {
-      const label = SECS.find(s => s.key === key)?.title || sheetName;
-      addSheet(sheetName, [
-        [label.toUpperCase(), ''], [''],
-        ['Conteúdo', strip(strategy?.[key] || '')],
-      ]);
+    addSheet('Capa',[['MAPA ESTRATÉGICO INSTAGRAM'],[''],['Marca',d.name],['Instagram',h],['Nicho',d.niche],['Objetivo',d.goal],['Gerado em',new Date().toLocaleDateString('pt-BR')]]);
+    const sheetMap = [['01 Diagnóstico','diagnostico'],['02 Posicionamento','posicionamento'],['03 Persona','persona'],['04 Concorrência','concorrencia'],['05 Linhas Editoriais','linhasEditoriais'],['06 Calendário','calendarioSugerido'],['07 Ideias','ideiasDeConteudo'],['08 Plano de Ação','planoDeAcao']];
+    sheetMap.forEach(([sName, key]) => {
+      const label = SECS.find(s => s.key === key)?.title || sName;
+      addSheet(sName,[[label.toUpperCase(),''],[''],[strip(strategy?.[key]||'')]]);
     });
-
-    XLSX.writeFile(wb, 'mapa-estrategico-' + (d.name || 'marca').toLowerCase().replace(/\s+/g, '-') + '.xlsx');
+    XLSX.writeFile(wb,'mapa-estrategico-'+(d.name||'marca').toLowerCase().replace(/\s+/g,'-')+'.xlsx');
   };
 
-  const loadingSteps = [
-    '🔍 Analisando o perfil e o negócio',
-    '🎯 Definindo posicionamento',
-    '👤 Construindo a persona ideal',
-    '📝 Criando pilares e funil',
-    '📅 Montando calendário e plano de ação',
-  ];
-
+  const loadingSteps = ['🔍 Analisando o perfil e o negócio','🎯 Definindo posicionamento','👤 Construindo a persona ideal','📝 Criando pilares e funil','📅 Montando calendário e plano de ação'];
   const niches = ['Moda e Beleza','Alimentação','Saúde e Bem-estar','Educação / Cursos','Casa e Decoração','Serviços','Tecnologia','Pets','Outro'];
   const goals  = ['Vender mais','Crescer seguidores','Construir autoridade','Engajar comunidade','Atrair parcerias'];
   const freqs  = ['Quase não posto','1-2x / semana','3-4x / semana','Todo dia'];
   const execs  = ['Eu mesmo(a)','Assistente','Freelancer','Equipe interna'];
-
-  const igHandle = formData.current?.ig || '';
 
   return (
     <>
@@ -291,14 +238,10 @@ export default function Home() {
         .fg{margin-bottom:1.1rem}
         label{display:block;font-size:12.5px;font-weight:600;color:var(--text2);margin-bottom:5px;letter-spacing:.01em;text-transform:uppercase}
         .req{color:var(--green)}
-        input[type=text],input[type=password],textarea{width:100%;background:var(--navy2);border:1px solid var(--border2);color:var(--text);border-radius:var(--rs);padding:.75rem .9rem;font-family:inherit;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s}
+        input[type=text],textarea{width:100%;background:var(--navy2);border:1px solid var(--border2);color:var(--text);border-radius:var(--rs);padding:.75rem .9rem;font-family:inherit;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s}
         input:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(74,222,128,.08)}
         input::placeholder,textarea::placeholder{color:var(--text3)}
         textarea{resize:vertical;min-height:88px}
-        .card{background:var(--navy2);border:1px solid var(--border);border-radius:var(--r);padding:1.25rem 1.5rem;margin-bottom:1rem}
-        .card-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:.4rem}
-        .card p{font-size:12.5px;color:var(--text2);line-height:1.6}
-        .card a{color:var(--green)}
         .pg{display:flex;flex-wrap:wrap;gap:6px}
         .pc{background:var(--navy2);border:1px solid var(--border2);color:var(--text2);padding:7px 14px;border-radius:100px;font-size:13px;cursor:pointer;transition:all .15s;user-select:none;font-weight:500;font-family:inherit}
         .pc:hover{border-color:var(--green-border);color:var(--text)}
@@ -310,7 +253,7 @@ export default function Home() {
         .ig-body h4{font-size:13.5px;font-weight:700;margin-bottom:2px;color:var(--text)}
         .ig-body p{font-size:12px;color:var(--text2);line-height:1.5}
         .badge{align-self:center;margin-left:auto;flex-shrink:0;background:var(--green-dim);color:var(--green);font-size:10px;font-weight:700;padding:3px 9px;border-radius:100px;letter-spacing:.04em}
-        .upload-box{background:var(--bg2);border:1.5px dashed var(--border2);border-radius:var(--r);padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;margin-top:8px}
+        .upload-box{background:var(--bg2);border:1.5px dashed var(--border2);border-radius:var(--r);padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;margin-top:8px;display:block}
         .upload-box:hover{border-color:var(--green)}
         .thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
         .thumb{position:relative;width:70px;height:70px;border-radius:7px;overflow:hidden;border:1px solid var(--border2)}
@@ -364,15 +307,12 @@ export default function Home() {
 
       <div className="wrap">
 
-        {/* HERO */}
         {step === 0 && (
           <div className="fadeup">
             <div className="eyebrow">Estratégia com IA</div>
             <h1>Mapa estratégico<br/><span className="hl">para Instagram</span></h1>
             <p className="hero-desc">Responda perguntas simples, envie prints do seu Instagram, e nossa IA cria um diagnóstico completo + estratégia profissional em minutos.</p>
-            <button className="btn-cta" onClick={() => go(1)}>
-              Começar agora →
-            </button>
+            <button className="btn-cta" onClick={() => go(1)}>Começar agora →</button>
             <div className="chips">
               {['Diagnóstico honesto','Posicionamento','Persona ideal','Linhas editoriais','Funil de conteúdo','Calendário','Plano de ação','PDF + Excel'].map(c => (
                 <div key={c} className="chip">{c}</div>
@@ -381,49 +321,22 @@ export default function Home() {
           </div>
         )}
 
-        {/* STEP 1 */}
         {step === 1 && (
           <div className="fadeup">
             <div className="prog"><div className="pf" style={{width:'25%'}}/></div>
-            <div className="sh">
-              <div className="sh-num">Passo 1 de 3</div>
-              <h2>Sobre a marca</h2>
-              <p>Informações básicas do negócio.</p>
-            </div>
-
-            <div className="fg">
-              <label>Nome da marca <span className="req">*</span></label>
-              <input type="text" id="brand-name" placeholder="Ex: Studio Margot, Bianca Doces, Clínica Renove" maxLength={60}/>
-            </div>
-            <div className="fg">
-              <label>O que vende ou oferece <span className="req">*</span></label>
-              <input type="text" id="brand-product" placeholder="Ex: roupas plus size, bolos personalizados, consultoria financeira" maxLength={160}/>
-            </div>
+            <div className="sh"><div className="sh-num">Passo 1 de 3</div><h2>Sobre a marca</h2><p>Informações básicas do negócio.</p></div>
+            <div className="fg"><label>Nome da marca <span className="req">*</span></label><input type="text" id="brand-name" placeholder="Ex: Studio Margot, Bianca Doces" maxLength={60}/></div>
+            <div className="fg"><label>O que vende ou oferece <span className="req">*</span></label><input type="text" id="brand-product" placeholder="Ex: roupas plus size, bolos personalizados" maxLength={160}/></div>
             <div className="fg">
               <label>Nicho / setor <span className="req">*</span></label>
-              <div className="pg">
-                {niches.map(n => (
-                  <button key={n} className={`pc ${niche===n?'pc-sel':''}`} onClick={() => setNiche(n)}>{n}</button>
-                ))}
-              </div>
+              <div className="pg">{niches.map(n => <button key={n} className={`pc ${niche===n?'pc-sel':''}`} onClick={() => setNiche(n)}>{n}</button>)}</div>
             </div>
             <div className="fg">
               <label>Objetivo principal no Instagram <span className="req">*</span></label>
-              <div className="pg">
-                {goals.map(g => (
-                  <button key={g} className={`pc ${goal===g?'pc-sel':''}`} onClick={() => setGoal(g)}>{g}</button>
-                ))}
-              </div>
+              <div className="pg">{goals.map(g => <button key={g} className={`pc ${goal===g?'pc-sel':''}`} onClick={() => setGoal(g)}>{g}</button>)}</div>
             </div>
-            <div className="fg">
-              <label>Cliente ideal</label>
-              <input type="text" id="brand-client" placeholder="Ex: mulheres 25-40, mães, pequenos empresários" maxLength={160}/>
-            </div>
-            <div className="fg">
-              <label>História e diferencial da marca</label>
-              <textarea id="brand-story" placeholder="Como surgiu? O que te diferencia?" maxLength={500}/>
-            </div>
-
+            <div className="fg"><label>Cliente ideal</label><input type="text" id="brand-client" placeholder="Ex: mulheres 25-40, mães, pequenos empresários" maxLength={160}/></div>
+            <div className="fg"><label>História e diferencial da marca</label><textarea id="brand-story" placeholder="Como surgiu? O que te diferencia?" maxLength={500}/></div>
             {formErrors.s1 && <div className="err-box">{formErrors.s1}</div>}
             <div className="nav-row">
               <button className="btn-back" onClick={() => go(0)}>← Voltar</button>
@@ -432,43 +345,26 @@ export default function Home() {
           </div>
         )}
 
-        {/* STEP 2 */}
         {step === 2 && (
           <div className="fadeup">
             <div className="prog"><div className="pf" style={{width:'50%'}}/></div>
-            <div className="sh">
-              <div className="sh-num">Passo 2 de 3</div>
-              <h2>Seu Instagram</h2>
-              <p>Link do perfil + como quer enviar os dados para análise.</p>
-            </div>
-
-            <div className="fg">
-              <label>Link ou @ do Instagram <span className="req">*</span></label>
-              <input type="text" id="ig-handle" placeholder="@suamarca ou instagram.com/suamarca" maxLength={100}/>
-            </div>
-
+            <div className="sh"><div className="sh-num">Passo 2 de 3</div><h2>Seu Instagram</h2><p>Link do perfil + como quer enviar os dados.</p></div>
+            <div className="fg"><label>Link ou @ do Instagram <span className="req">*</span></label><input type="text" id="ig-handle" placeholder="@suamarca ou instagram.com/suamarca" maxLength={100}/></div>
             <div className="fg">
               <label>Como fornecer os dados <span className="req">*</span></label>
               <div className={`ig-opt ${igMode==='ss'?'ig-opt-sel':''}`} onClick={() => setIgMode('ss')}>
                 <div className="ig-ico">📸</div>
-                <div className="ig-body">
-                  <h4>Screenshots do Instagram</h4>
-                  <p>Tire prints do perfil (grid + bio) e de 3 a 5 posts. A IA analisa visualmente.</p>
-                </div>
+                <div className="ig-body"><h4>Screenshots do Instagram</h4><p>Tire prints do perfil e de 3 a 5 posts. A IA analisa visualmente.</p></div>
                 <div className="badge">Recomendado</div>
               </div>
               <div className={`ig-opt ${igMode==='mn'?'ig-opt-sel':''}`} onClick={() => setIgMode('mn')}>
                 <div className="ig-ico">✍️</div>
-                <div className="ig-body">
-                  <h4>Descrever manualmente</h4>
-                  <p>Cole suas últimas legendas e descreva o perfil. Mesmo resultado, mais trabalhoso.</p>
-                </div>
+                <div className="ig-body"><h4>Descrever manualmente</h4><p>Cole suas últimas legendas e descreva o perfil.</p></div>
               </div>
             </div>
-
             {igMode === 'ss' && (
               <div>
-                <label htmlFor="f-ss" className="upload-box" style={{display:'block'}}>
+                <label htmlFor="f-ss" className="upload-box">
                   <div style={{fontSize:'1.6rem',marginBottom:'.5rem'}}>🖼️</div>
                   <p style={{color:'var(--text2)',fontSize:'13px'}}>Toque para enviar screenshots</p>
                   <small style={{color:'var(--text3)',fontSize:'11px',display:'block',marginTop:'2px'}}>Print do perfil + 3 a 5 posts — até 6 imagens</small>
@@ -476,33 +372,19 @@ export default function Home() {
                 <input type="file" id="f-ss" accept="image/*" multiple style={{display:'none'}} onChange={handleScreenshots}/>
                 <div className="thumbs">
                   {screenshotPreviews.map((url, i) => (
-                    <div key={i} className="thumb">
-                      <img src={url} alt=""/>
-                      <button onClick={() => removeScreenshot(i)}>×</button>
-                    </div>
+                    <div key={i} className="thumb"><img src={url} alt=""/><button onClick={() => removeScreenshot(i)}>×</button></div>
                   ))}
                 </div>
                 <div className="notice"><strong>Dica:</strong> Print da página do perfil (bio + grid) + prints de 3 a 5 posts com legenda visível.</div>
               </div>
             )}
-
             {igMode === 'mn' && (
               <div>
-                <div className="fg" style={{marginTop:'10px'}}>
-                  <label>Bio do perfil</label>
-                  <input type="text" id="ig-bio" placeholder="Cole a bio como aparece no Instagram" maxLength={250}/>
-                </div>
-                <div className="fg">
-                  <label>Últimas 8 a 10 legendas <span className="req">*</span></label>
-                  <textarea id="ig-caps" placeholder={'Cole as legendas separadas por ---\n\nLegenda 1...\n---\nLegenda 2...'} style={{minHeight:'150px'}} maxLength={3500}/>
-                </div>
-                <div className="fg">
-                  <label>Visual do perfil</label>
-                  <input type="text" id="ig-visual" placeholder="Ex: fotos claras, tons pastel, estilo minimalista" maxLength={200}/>
-                </div>
+                <div className="fg" style={{marginTop:'10px'}}><label>Bio do perfil</label><input type="text" id="ig-bio" placeholder="Cole a bio como aparece no Instagram" maxLength={250}/></div>
+                <div className="fg"><label>Últimas 8 a 10 legendas <span className="req">*</span></label><textarea id="ig-caps" placeholder="Cole as legendas separadas por ---" style={{minHeight:'150px'}} maxLength={3500}/></div>
+                <div className="fg"><label>Visual do perfil</label><input type="text" id="ig-visual" placeholder="Ex: fotos claras, tons pastel, estilo minimalista" maxLength={200}/></div>
               </div>
             )}
-
             {formErrors.s2 && <div className="err-box">{formErrors.s2}</div>}
             <div className="nav-row">
               <button className="btn-back" onClick={() => go(1)}>← Voltar</button>
@@ -511,45 +393,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* STEP 3 */}
         {step === 3 && (
           <div className="fadeup">
             <div className="prog"><div className="pf" style={{width:'75%'}}/></div>
-            <div className="sh">
-              <div className="sh-num">Passo 3 de 3</div>
-              <h2>Contexto estratégico</h2>
-              <p>Últimas perguntas para afinar a estratégia.</p>
-            </div>
-
-            <div className="fg">
-              <label>Concorrentes ou marcas de referência</label>
-              <input type="text" id="competitors" placeholder="@marca1, @marca2 — Brasil ou exterior" maxLength={200}/>
-            </div>
+            <div className="sh"><div className="sh-num">Passo 3 de 3</div><h2>Contexto estratégico</h2><p>Últimas perguntas para afinar a estratégia.</p></div>
+            <div className="fg"><label>Concorrentes ou marcas de referência</label><input type="text" id="competitors" placeholder="@marca1, @marca2" maxLength={200}/></div>
             <div className="fg">
               <label>Frequência atual de posts</label>
-              <div className="pg">
-                {freqs.map(f => (
-                  <button key={f} className={`pc ${freq===f?'pc-sel':''}`} onClick={() => setFreq(f)}>{f}</button>
-                ))}
-              </div>
+              <div className="pg">{freqs.map(f => <button key={f} className={`pc ${freq===f?'pc-sel':''}`} onClick={() => setFreq(f)}>{f}</button>)}</div>
             </div>
             <div className="fg">
               <label>Quem vai executar o conteúdo?</label>
-              <div className="pg">
-                {execs.map(e => (
-                  <button key={e} className={`pc ${exec===e?'pc-sel':''}`} onClick={() => setExec(e)}>{e}</button>
-                ))}
-              </div>
+              <div className="pg">{execs.map(e => <button key={e} className={`pc ${exec===e?'pc-sel':''}`} onClick={() => setExec(e)}>{e}</button>)}</div>
             </div>
-            <div className="fg">
-              <label>O que não está funcionando hoje?</label>
-              <textarea id="pain" placeholder="Ex: pouco engajamento, não sei o que postar, visual inconsistente..." maxLength={500}/>
-            </div>
-            <div className="fg">
-              <label>Algo mais que a IA deva saber?</label>
-              <textarea id="extra" placeholder="Lançamentos, orçamento, tom de voz..." maxLength={400}/>
-            </div>
-
+            <div className="fg"><label>O que não está funcionando hoje?</label><textarea id="pain" placeholder="Ex: pouco engajamento, não sei o que postar..." maxLength={500}/></div>
+            <div className="fg"><label>Algo mais que a IA deva saber?</label><textarea id="extra" placeholder="Lançamentos, orçamento, tom de voz..." maxLength={400}/></div>
             <div className="nav-row">
               <button className="btn-back" onClick={() => go(2)}>← Voltar</button>
               <button className="btn-next" onClick={generate}>✦ Gerar estratégia</button>
@@ -557,7 +415,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* LOADING */}
         {step === 'load' && (
           <div className="fadeup" style={{textAlign:'center',padding:'3rem 0'}}>
             <div className="spin"/>
@@ -571,7 +428,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* RESULT */}
         {step === 'res' && (
           <div className="fadeup">
             {error ? (
@@ -586,14 +442,11 @@ export default function Home() {
                 <div className="res-header">
                   <div className="res-eyebrow">Mapa Estratégico Gerado</div>
                   <h2>Estratégia para {(formData.current.ig||'').startsWith('@') ? formData.current.ig : '@'+(formData.current.ig||'')}</h2>
-                  <p>Gerado em {new Date().toLocaleDateString('pt-BR', {day:'2-digit',month:'long',year:'numeric'})}</p>
+                  <p>Gerado em {new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})}</p>
                 </div>
                 {SECS.map(s => strategy?.[s.key] ? (
                   <div key={s.key} className="sec">
-                    <div className="sec-hd">
-                      <div className="sec-ico">{s.ico}</div>
-                      <h3>{s.title}</h3>
-                    </div>
+                    <div className="sec-hd"><div className="sec-ico">{s.ico}</div><h3>{s.title}</h3></div>
                     <div className="sec-body" dangerouslySetInnerHTML={{__html: fmt(strategy[s.key])}}/>
                   </div>
                 ) : null)}
